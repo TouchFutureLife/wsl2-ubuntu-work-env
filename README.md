@@ -1,6 +1,26 @@
 # wsl2-ubuntu-work-env
 搭建wsl2-ubunut的工作需要的环境
 
+## windows端准备
+- WSL 版本为 2（非 WSL1）；
+- Windows 已安装新版 usbipd-win（≥4.0），WSL2 安装 USB/IP 工具链。
+### 确认 WSL2 版本（非 WSL1）管理员 PowerShell 执行
+```
+# 查看 WSL 版本（确保 TargetVersion 为 2）
+wsl -l -v
+
+# 若为 WSL1，升级（替换为你的发行版名，如 Ubuntu）
+wsl --set-version Ubuntu 2
+
+# 更新 WSL 内核（必需，支持 USB/IP）
+wsl --update
+wsl --shutdown
+```
+### 安装 usbipd-win（USB 穿透核心工具）
+- 下载地址：https://github.com/dorssel/usbipd-win/releases
+- 安装最新 .msi 包（一路默认下一步）；
+- 验证安装：usbipd --version（输出版本号即成功）。
+
 ## 挂载usb
 ```
 #!/bin/bash
