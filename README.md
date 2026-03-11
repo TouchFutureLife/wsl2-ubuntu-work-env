@@ -22,6 +22,7 @@ wsl --shutdown
 - 验证安装：usbipd --version（输出版本号即成功）。
 
 ## 挂载usb
+### 方式1:wsl-ubuntu中调用win环境的powershell执行命令
 ```
 #!/bin/bash
 # WSL2 重启后自动恢复 USB 串口设备（强制指定 BUSID 参数）
@@ -144,6 +145,95 @@ echo -e "${GREEN}✅ USB 设备恢复成功！${NC}"
 echo -e "${GREEN}   串口路径：${SERIAL_DEVICE}${NC}"
 echo -e "${GREEN}   BUSID：${TARGET_BUSID}${NC}"
 ```
+### 方式2：只处理wls ubuntu中的命令方式
+这个版本完全不调用 Windows 命令，只做 WSL 内的必要操作，避免所有跨系统调用的坑：
+```
+#!/bin/bash
+# WSL2 USB 设备配置脚本（仅处理 WSL 端，Windows 端需手动挂载）
+# 使用方式：./bind_usb.sh 7-3
+# 前置：先在 Windows 管理员 PowerShell 执行：usbipd attach --busid 7-3 --wsl
+
+# ====================== 颜色输出 ======================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# ====================== 强制参数校验 ======================
+if [ $# -eq 0 ]; then
+    echo -e "${RED}❌ 错误：必须指定 BUSID 参数！${NC}"
+    echo -e "${YELLOW}ℹ️  使用方式：${NC}"
+    echo -e "   ./bind_usb.sh <BUSID>"
+    echo -e "   示例：./bind_usb.sh 7-1  或  ./bind_usb.sh 7-3"
+    echo -e "${YELLOW}ℹ️  前置操作（Windows 管理员 PowerShell）：${NC}"
+    echo -e "   usbipd attach --busid <BUSID> --wsl"
+    exit 1
+fi
+
+TARGET_BUSID="$1"
+if ! [[ "$TARGET_BUSID" =~ ^[0-9]+-[0-9]+$ ]]; then
+    echo -e "${RED}❌ 错误：BUSID 格式无效！${NC}"
+    echo -e "${YELLOW}ℹ️  正确格式：7-1、3-2（数字-数字）${NC}"
+    exit 1
+fi
+
+echo -e "${YELLOW}🔧 已指定 BUSID：${TARGET_BUSID}${NC}"
+
+# ====================== 智能权限检测 =======================
+echo -e "\n🔧 检测串口权限组（dialout）..."
+if groups $USER | grep -q "\bdialout\b"; then
+    echo -e "${GREEN}✓ 当前用户已在 dialout 组，无需重复授权${NC}"
+else
+    echo -e "${YELLOW}⚠️  当前用户未在 dialout 组，执行永久授权...${NC}"
+    sudo usermod -aG dialout $USER
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}✓ 永久授权成功！${NC}"
+        echo -e "${YELLOW}ℹ️  权限将在重启终端/WSL2 后生效${NC}"
+    else
+        echo -e "${RED}❌ 永久授权失败！请手动执行：sudo usermod -aG dialout $USER${NC}"
+    fi
+fi
+
+# ====================== 加载内核模块 ======================
+echo -e "\n🔧 加载 USB/IP 内核模块..."
+if ! sudo modprobe vhci-hcd; then
+    echo -e "${RED}❌ 加载 vhci-hcd 模块失败！${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ 内核模块加载成功${NC}"
+
+# ====================== 等待并检测串口 ======================
+echo -e "\n🔧 等待串口设备加载（3 秒）..."
+sleep 3
+
+echo -e "\n🔧 检测可用串口设备..."
+# 遍历所有可能的串口路径
+SERIAL_DEVICES=(/dev/ttyUSB* /dev/ttyACM*)
+FOUND_DEVICE=""
+for dev in "${SERIAL_DEVICES[@]}"; do
+    if [ -e "$dev" ]; then
+        FOUND_DEVICE="$dev"
+        break
+    fi
+done
+
+if [ -z "$FOUND_DEVICE" ]; then
+    echo -e "${RED}❌ 未找到可用串口设备！${NC}"
+    echo -e "${YELLOW}ℹ️  排查步骤：${NC}"
+    echo -e "   1. 确认已在 Windows 管理员 PowerShell 执行：usbipd attach --busid ${TARGET_BUSID} --wsl"
+    echo -e "   2. 执行 lsusb 查看已挂载的 USB 设备"
+    lsusb
+    exit 1
+else
+    # 临时授权串口
+    sudo chmod 666 "$FOUND_DEVICE"
+    echo -e "${GREEN}✅ USB 设备配置完成！${NC}"
+    echo -e "${GREEN}   串口路径：${FOUND_DEVICE}${NC}"
+    echo -e "${GREEN}   BUSID：${TARGET_BUSID}${NC}"
+    echo -e "${YELLOW}ℹ️  串口已授权，可直接使用（如：screen ${FOUND_DEVICE} 115200）${NC}"
+fi
+```
+
 ## 卸载usb
 ```
 #!/bin/bash
